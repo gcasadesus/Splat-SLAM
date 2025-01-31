@@ -45,18 +45,18 @@ class MotionFilter:
         if cfg["mono_prior"]["predict_online"]:
             self.mono_depth_estimator = get_mono_depth_estimator(cfg)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     def __context_encoder(self, image):
         """ context features """
         net, inp = self.cnet(image).split([128,128], dim=2)
         return net.tanh().squeeze(0), inp.relu().squeeze(0)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     def __feature_encoder(self, image):
         """ features for correlation volume """
         return self.fnet(image).squeeze(0)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     @torch.no_grad()
     def track(self, tstamp, image, intrinsics=None):
         """ main update operation - run on every frame in video """

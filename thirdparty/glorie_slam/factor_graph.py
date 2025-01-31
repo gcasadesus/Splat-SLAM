@@ -106,7 +106,7 @@ class FactorGraph:
         self.target_inac = None
         self.weight_inac = None
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     @torch.no_grad()
     def add_factors(self, ii, jj, remove=False):
         """ add edges to factor graph """
@@ -142,7 +142,7 @@ class FactorGraph:
             inp = self.video.inps[ii].to(self.device).unsqueeze(0)
             self.inp = inp if self.inp is None else torch.cat([self.inp, inp], 1)
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             target, _ = self.video.reproject(ii, jj)
             weight = torch.zeros_like(target)
 
@@ -156,7 +156,7 @@ class FactorGraph:
         self.target = torch.cat([self.target, target], 1)
         self.weight = torch.cat([self.weight, weight], 1)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     def rm_factors(self, mask, store=False):
         """ drop edges from factor graph """
 
@@ -184,7 +184,7 @@ class FactorGraph:
         self.weight = self.weight[:,~mask]
 
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     def rm_keyframe(self, ix):
         """ drop edges from factor graph """
         with self.video.get_lock():
@@ -223,13 +223,13 @@ class FactorGraph:
         self.rm_factors(m, store=False)
 
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.amp.autocast('cuda', enabled=True)
     @torch.no_grad()
     def update(self, t0=None, t1=None, itrs=2, use_inactive=False, EP=1e-7, motion_only=False, opt_type="pose_depth"):
         """ run update operator on factor graph """
 
         # motion features
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             coords1, mask = self.video.reproject(self.ii, self.jj)
             motn = torch.cat([coords1 - self.coords0, self.target - coords1], dim=-1)
             motn = motn.permute(0,1,4,2,3).clamp(-64.0, 64.0)
@@ -243,7 +243,7 @@ class FactorGraph:
         if t0 is None:
             t0 = max(1, self.ii.min().item()+1)
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             self.target = coords1 + delta.to(dtype=torch.float)
             self.weight = weight.to(dtype=torch.float)
 
@@ -270,7 +270,7 @@ class FactorGraph:
         self.age += 1
 
 
-    @torch.cuda.amp.autocast(enabled=False)
+    @torch.amp.autocast('cuda', enabled=False)
     @torch.no_grad()
     def update_lowmem(self, t0=None, t1=None, itrs=2, use_inactive=False, EP=1e-7, steps=8, enable_wq=True):
         """ run update operator on factor graph - reduced memory implementation """
@@ -282,7 +282,7 @@ class FactorGraph:
         corr_op = AltCorrBlock(self.video.fmaps.view(1, num*rig, ch, ht, wd))
 
         for step in range(steps):
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast('cuda', enabled=False):
                 coords1, mask = self.video.reproject(self.ii, self.jj)
                 motn = torch.cat([coords1 - self.coords0, self.target - coords1], dim=-1)
                 motn = motn.permute(0,1,4,2,3).clamp(-64.0, 64.0)
@@ -297,7 +297,7 @@ class FactorGraph:
                 ht, wd = self.coords0.shape[0:2]
                 corr1 = corr_op(coords1[:,v], rig * iis, rig * jjs + (iis == jjs).long())
 
-                with torch.cuda.amp.autocast(enabled=True):
+                with torch.amp.autocast('cuda', enabled=True):
                  
                     net, delta, weight, damping, upmask = \
                         self.update_op(self.net[:,v], self.video.inps[None,iis], corr1, motn[:,v], iis, jjs)

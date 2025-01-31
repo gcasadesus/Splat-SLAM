@@ -32,7 +32,7 @@ def get_mono_depth_estimator(cfg):
 def get_omnidata_model(pretrained_path, device, num_channels):
     from thirdparty.mono_priors.omnidata.modules.midas.dpt_depth import DPTDepthModel
     model = DPTDepthModel(backbone='vitb_rn50_384',num_channels=num_channels)
-    checkpoint = torch.load(pretrained_path)
+    checkpoint = torch.load(pretrained_path, weights_only=False)
     
     if 'state_dict' in checkpoint:
         state_dict = {}
