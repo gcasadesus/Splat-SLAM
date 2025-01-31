@@ -21,9 +21,11 @@ from thirdparty.glorie_slam import config
 from src.slam import SLAM
 from src.utils.datasets import get_dataset
 from time import gmtime, strftime
-from colorama import Fore,Style
+from colorama import Fore, Style
 
 import random
+
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -31,45 +33,46 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('config', type=str, help='Path to config file.')
+    parser.add_argument("config", type=str, help="Path to config file.")
     parser.add_argument("--only_tracking", action="store_true", help="Only tracking is triggered")
     args = parser.parse_args()
 
-    torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method("spawn")
 
-    cfg = config.load_config(
-        args.config, './configs/splat_slam.yaml'
-    )
-    setup_seed(cfg['setup_seed'])
+    cfg = config.load_config(args.config, "./configs/splat_slam.yaml")
+    setup_seed(cfg["setup_seed"])
 
     if args.only_tracking:
-        cfg['only_tracking'] = True
-        cfg['mono_prior']['predict_online'] = True
+        cfg["only_tracking"] = True
+        cfg["mono_prior"]["predict_online"] = True
 
-    output_dir = cfg['data']['output']
-    output_dir = output_dir+f"/{cfg['scene']}"
+    output_dir = cfg["data"]["output"]
+    output_dir = output_dir + f"/{cfg['scene']}"
 
     start_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-    start_info = "-"*30+Fore.LIGHTRED_EX+\
-                 f"\nStart Splat-SLAM at {start_time},\n"+Style.RESET_ALL+ \
-                 f"   scene: {cfg['dataset']}-{cfg['scene']},\n" \
-                 f"   only_tracking: {cfg['only_tracking']},\n" \
-                 f"   output: {output_dir}\n"+ \
-                 "-"*30
+    start_info = (
+        "-" * 30
+        + Fore.LIGHTRED_EX
+        + f"\nStart Splat-SLAM at {start_time},\n"
+        + Style.RESET_ALL
+        + f"   scene: {cfg['dataset']}-{cfg['scene']},\n"
+        f"   only_tracking: {cfg['only_tracking']},\n"
+        f"   output: {output_dir}\n" + "-" * 30
+    )
     print(start_info)
-    
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    config.save_config(cfg, f'{output_dir}/cfg.yaml')
+    config.save_config(cfg, f"{output_dir}/cfg.yaml")
 
     dataset = get_dataset(cfg)
 
-    slam = SLAM(cfg,dataset)
+    slam = SLAM(cfg, dataset)
     slam.run()
 
     end_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-    print("-"*30+Fore.LIGHTRED_EX+f"\nSplat-SLAM finishes!\n"+Style.RESET_ALL+f"{end_time}\n"+"-"*30)
-
+    print("-" * 30 + Fore.LIGHTRED_EX + f"\nSplat-SLAM finishes!\n" + Style.RESET_ALL + f"{end_time}\n" + "-" * 30)

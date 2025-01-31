@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-dataset: 'tumrgbd'
+dataset: 'LAC'
 
 mapping:
   Calibration:
@@ -41,5 +41,5 @@ cam:  #NOTE: intrinsic is different per scene in TUM
   W_out: 512
 
 data:
-  dataset_root: /home/shared/data_raw/TUM_RGBD
-  output: /home/shared/outputs/guillemc/TUM_RGBD
+  dataset_root: /home/shared/data_slam/LAC
+  output: /home/shared/outputs/guillemc/LAC

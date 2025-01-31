@@ -883,7 +883,7 @@ class Mapper(object):
             is_finished = frame_info['end']
 
             if self.verbose:
-                self.printer.print(f"\nMapping Frame {idx} ...", FontColor.MAPPER)
+                self.printer.print(f"\033[F\rMapping Frame {idx} ...", FontColor.MAPPER)
             
             if is_finished:
                 print("Done with Mapping and Tracking")
