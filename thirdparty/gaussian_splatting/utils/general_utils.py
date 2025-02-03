@@ -80,7 +80,9 @@ def helper(step, lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_ste
         return 0.0
     if lr_delay_steps > 0:
         # A kind of reverse cosine decay.
-        delay_rate = lr_delay_mult + (1 - lr_delay_mult) * np.sin(0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1))
+        delay_rate = lr_delay_mult + (1 - lr_delay_mult) * np.sin(
+            0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1)
+        )
     else:
         delay_rate = 1.0
     t = np.clip(step / max_steps, 0, 1)
@@ -241,3 +243,24 @@ def safe_state(silent):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
+
+
+def reconstruct_sigma(L):
+    """
+    Reconstructs full 3x3 covariance from lower diagonal elements.
+    """
+    batch_size = L.shape[0]
+
+    # Construct the lower triangular matrix
+    sigma = torch.zeros((batch_size, 3, 3), dtype=torch.float, device="cuda")
+    sigma[:, 0, 0] = L[:, 0]
+    sigma[:, 0, 1] = L[:, 1]
+    sigma[:, 0, 2] = L[:, 2]
+    sigma[:, 1, 0] = L[:, 1]
+    sigma[:, 1, 1] = L[:, 3]
+    sigma[:, 1, 2] = L[:, 4]
+    sigma[:, 2, 0] = L[:, 2]
+    sigma[:, 2, 1] = L[:, 4]
+    sigma[:, 2, 2] = L[:, 5]
+
+    return sigma
