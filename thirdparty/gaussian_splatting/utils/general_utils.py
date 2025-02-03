@@ -39,9 +39,7 @@ def PILtoTorch2(pil_image):
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
 
 
-def get_expon_lr_func(
-    lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
-):
+def get_expon_lr_func(lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000):
     """
     Copied from Plenoxels
 
@@ -76,17 +74,13 @@ def get_expon_lr_func(
     #               lr_delay_steps=lr_delay_steps, lr_delay_mult=lr_delay_mult, max_steps=max_steps)
 
 
-def helper(
-    step, lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
-):
+def helper(step, lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000):
     if step < 0 or (lr_init == 0.0 and lr_final == 0.0):
         # Disable this parameter
         return 0.0
     if lr_delay_steps > 0:
         # A kind of reverse cosine decay.
-        delay_rate = lr_delay_mult + (1 - lr_delay_mult) * np.sin(
-            0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1)
-        )
+        delay_rate = lr_delay_mult + (1 - lr_delay_mult) * np.sin(0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1))
     else:
         delay_rate = 1.0
     t = np.clip(step / max_steps, 0, 1)
@@ -111,9 +105,7 @@ def strip_symmetric(sym):
 
 
 def build_rotation(r):
-    norm = torch.sqrt(
-        r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
-    )
+    norm = torch.sqrt(r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3])
 
     q = r / norm[:, None]
 
@@ -135,6 +127,7 @@ def build_rotation(r):
     R[:, 2, 2] = 1 - 2 * (x * x + y * y)
     return R
 
+
 def rotation_matrix_to_quaternion(R):
     """
     Convert a 3x3 rotation matrix to a quaternion.
@@ -149,10 +142,42 @@ def rotation_matrix_to_quaternion(R):
     q = torch.zeros((R.size(0), 4), device=R.device)
 
     # Calculate each element of the quaternion
-    q[:, 0] = torch.sqrt(torch.max(torch.tensor(0.0, device=R.device), 1 + R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2])) / 2
-    q[:, 1] = torch.sqrt(torch.max(torch.tensor(0.0, device=R.device), 1 + R[:, 0, 0] - R[:, 1, 1] - R[:, 2, 2])) / 2
-    q[:, 2] = torch.sqrt(torch.max(torch.tensor(0.0, device=R.device), 1 - R[:, 0, 0] + R[:, 1, 1] - R[:, 2, 2])) / 2
-    q[:, 3] = torch.sqrt(torch.max(torch.tensor(0.0, device=R.device), 1 - R[:, 0, 0] - R[:, 1, 1] + R[:, 2, 2])) / 2
+    q[:, 0] = (
+        torch.sqrt(
+            torch.max(
+                torch.tensor(0.0, device=R.device),
+                1 + R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2],
+            )
+        )
+        / 2
+    )
+    q[:, 1] = (
+        torch.sqrt(
+            torch.max(
+                torch.tensor(0.0, device=R.device),
+                1 + R[:, 0, 0] - R[:, 1, 1] - R[:, 2, 2],
+            )
+        )
+        / 2
+    )
+    q[:, 2] = (
+        torch.sqrt(
+            torch.max(
+                torch.tensor(0.0, device=R.device),
+                1 - R[:, 0, 0] + R[:, 1, 1] - R[:, 2, 2],
+            )
+        )
+        / 2
+    )
+    q[:, 3] = (
+        torch.sqrt(
+            torch.max(
+                torch.tensor(0.0, device=R.device),
+                1 - R[:, 0, 0] - R[:, 1, 1] + R[:, 2, 2],
+            )
+        )
+        / 2
+    )
 
     # Determine the correct signs
     q[:, 1] *= torch.sign(q[:, 1] * (R[:, 2, 1] - R[:, 1, 2]))
@@ -161,18 +186,20 @@ def rotation_matrix_to_quaternion(R):
 
     return q
 
+
 def quaternion_multiply(q1, q2):
     # Extract components
     w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
     w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
-    
+
     # Compute the product
-    w = w1*w2 - x1*x2 - y1*y2 - z1*z2
-    x = w1*x2 + x1*w2 + y1*z2 - z1*y2
-    y = w1*y2 + y1*w2 + z1*x2 - x1*z2
-    z = w1*z2 + z1*w2 + x1*y2 - y1*x2
-    
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
+    z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
+
     return torch.stack((w, x, y, z), dim=-1)
+
 
 def build_scaling_rotation(s, r):
     L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
@@ -199,9 +226,7 @@ def safe_state(silent):
                     old_f.write(
                         x.replace(
                             "\n",
-                            " [{}]\n".format(
-                                str(datetime.now().strftime("%d/%m %H:%M:%S"))
-                            ),
+                            " [{}]\n".format(str(datetime.now().strftime("%d/%m %H:%M:%S"))),
                         )
                     )
                 else:

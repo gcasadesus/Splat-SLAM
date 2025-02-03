@@ -64,7 +64,10 @@ class SLAM:
 
         # post processor - fill in poses for non-keyframes
         self.traj_filler = PoseTrajectoryFiller(
-            net=self.droid_net, video=self.video, printer=self.printer, device=self.device
+            net=self.droid_net,
+            video=self.video,
+            printer=self.printer,
+            device=self.device,
         )
 
         self.tracker: Tracker = None
@@ -213,7 +216,7 @@ class SLAM:
 
         # evaluate depth error
         self.printer.print("Evaluate sensor depth error with per frame alignment", FontColor.EVAL)
-        if self.cfg["eval_depth"]:
+        if self.stream.depth_paths is not None:
             depth_l1, depth_l1_max_4m, coverage = self.video.eval_depth_l1(f"{self.save_dir}/video.npz", self.stream)
             self.printer.print("Depth L1: " + str(depth_l1), FontColor.EVAL)
             self.printer.print("Depth L1 mask 4m: " + str(depth_l1_max_4m), FontColor.EVAL)
@@ -240,7 +243,7 @@ class SLAM:
             "traj translation": t_a,
             "traj stats": ate_statistics,
         }
-        if self.cfg["eval_depth"]:
+        if self.stream.depth_paths is not None:
             integers["depth_l1"] = depth_l1
             integers["depth_l1_global_scale"] = depth_l1_g
             integers["depth_l1_mask_4m"] = depth_l1_max_4m
@@ -253,7 +256,14 @@ class SLAM:
 
         self.printer.print(f"File saved as {file_path}", FontColor.EVAL)
 
-        full_traj_eval(self.traj_filler, f"{self.save_dir}/traj", "full_traj", self.stream, self.logger, self.printer)
+        full_traj_eval(
+            self.traj_filler,
+            f"{self.save_dir}/traj",
+            "full_traj",
+            self.stream,
+            self.logger,
+            self.printer,
+        )
 
         self.printer.print("Metrics Evaluation Done!", FontColor.EVAL)
 

@@ -18,6 +18,7 @@ import torch.nn as nn
 
 GRAD_CLIP = 0.01
 
+
 class GradClip(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):

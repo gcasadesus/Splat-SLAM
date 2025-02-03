@@ -77,7 +77,7 @@ class BaseDataset(Dataset):
         super(BaseDataset, self).__init__()
         self.name = cfg["dataset"]
         self.device = device
-        self.f = cfg["cam"]["png_depth_scale"]
+        self.png_depth_scale = cfg["cam"]["png_depth_scale"]
         self.n_img = -1
         self.depth_paths = None
         self.color_paths = None
@@ -94,11 +94,19 @@ class BaseDataset(Dataset):
             cfg["cam"]["cx"],
             cfg["cam"]["cy"],
         )
-        self.fx_orig, self.fy_orig, self.cx_orig, self.cy_orig = self.fx, self.fy, self.cx, self.cy
+        self.fx_orig, self.fy_orig, self.cx_orig, self.cy_orig = (
+            self.fx,
+            self.fy,
+            self.cx,
+            self.cy,
+        )
         self.H_out, self.W_out = cfg["cam"]["H_out"], cfg["cam"]["W_out"]
         self.H_edge, self.W_edge = cfg["cam"]["H_edge"], cfg["cam"]["W_edge"]
 
-        self.H_out_with_edge, self.W_out_with_edge = self.H_out + self.H_edge * 2, self.W_out + self.W_edge * 2
+        self.H_out_with_edge, self.W_out_with_edge = (
+            self.H_out + self.H_edge * 2,
+            self.W_out + self.W_edge * 2,
+        )
         self.intrinsic = torch.as_tensor([self.fx, self.fy, self.cx, self.cy]).float()
         self.intrinsic[0] *= self.W_out_with_edge / self.W
         self.intrinsic[1] *= self.H_out_with_edge / self.H
@@ -142,7 +150,12 @@ class BaseDataset(Dataset):
         color_data_fullsize = cv2.imread(color_path)
         if self.distortion is not None:
             K = np.eye(3)
-            K[0, 0], K[0, 2], K[1, 1], K[1, 2] = self.fx_orig, self.cx_orig, self.fy_orig, self.cy_orig
+            K[0, 0], K[0, 2], K[1, 1], K[1, 2] = (
+                self.fx_orig,
+                self.cx_orig,
+                self.fy_orig,
+                self.cy_orig,
+            )
             # undistortion is only applied on color image, not depth!
             color_data_fullsize = cv2.undistort(color_data_fullsize, K, self.distortion)
 
@@ -163,7 +176,10 @@ class BaseDataset(Dataset):
         return color_data
 
     def get_intrinsic(self):
-        H_out_with_edge, W_out_with_edge = self.H_out + self.H_edge * 2, self.W_out + self.W_edge * 2
+        H_out_with_edge, W_out_with_edge = (
+            self.H_out + self.H_edge * 2,
+            self.W_out + self.W_edge * 2,
+        )
         intrinsic = torch.as_tensor([self.fx_orig, self.fy_orig, self.cx_orig, self.cy_orig]).float()
         intrinsic[0] *= W_out_with_edge / self.W
         intrinsic[1] *= H_out_with_edge / self.H
@@ -180,7 +196,12 @@ class BaseDataset(Dataset):
         color_data_fullsize = cv2.imread(color_path)
         if self.distortion is not None:
             K = np.eye(3)
-            K[0, 0], K[0, 2], K[1, 1], K[1, 2] = self.fx_orig, self.cx_orig, self.fy_orig, self.cy_orig
+            K[0, 0], K[0, 2], K[1, 1], K[1, 2] = (
+                self.fx_orig,
+                self.cx_orig,
+                self.fy_orig,
+                self.cy_orig,
+            )
             # undistortion is only applied on color image, not depth!
             color_data_fullsize = cv2.undistort(color_data_fullsize, K, self.distortion)
 
@@ -198,6 +219,8 @@ class BaseDataset(Dataset):
         if depth_data_fullsize is not None:
             depth_data_fullsize = torch.from_numpy(depth_data_fullsize).float()
             depth_data = F.interpolate(depth_data_fullsize[None, None], outsize, mode="nearest")[0, 0]
+        else:
+            depth_data = None
 
         # crop image edge, there are invalid value on the edge of the color image
         if self.W_edge > 0:
@@ -264,10 +287,12 @@ class ScanNet(BaseDataset):
         if max_frames < 0:
             max_frames = int(1e5)
         self.color_paths = sorted(
-            glob.glob(os.path.join(self.input_folder, "color", "*.jpg")), key=lambda x: int(os.path.basename(x)[:-4])
+            glob.glob(os.path.join(self.input_folder, "color", "*.jpg")),
+            key=lambda x: int(os.path.basename(x)[:-4]),
         )[:max_frames][::stride]
         self.depth_paths = sorted(
-            glob.glob(os.path.join(self.input_folder, "depth", "*.png")), key=lambda x: int(os.path.basename(x)[:-4])
+            glob.glob(os.path.join(self.input_folder, "depth", "*.png")),
+            key=lambda x: int(os.path.basename(x)[:-4]),
         )[:max_frames][::stride]
         self.load_poses(os.path.join(self.input_folder, "pose"))
         self.poses = self.poses[:max_frames][::stride]
@@ -277,7 +302,10 @@ class ScanNet(BaseDataset):
 
     def load_poses(self, path):
         self.poses = []
-        pose_paths = sorted(glob.glob(os.path.join(path, "*.txt")), key=lambda x: int(os.path.basename(x)[:-4]))
+        pose_paths = sorted(
+            glob.glob(os.path.join(path, "*.txt")),
+            key=lambda x: int(os.path.basename(x)[:-4]),
+        )
         for pose_path in pose_paths:
             with open(pose_path, "r") as f:
                 lines = f.readlines()
@@ -386,7 +414,7 @@ class TUM_RGBD(BaseDataset):
         return pose
 
 
-class LAC(TUM_RGBD):
+class LAC(BaseDataset):
     def __init__(self, cfg, device="cuda:0"):
         super(LAC, self).__init__(cfg, device)
         self.color_paths, self.depth_paths, self.poses = self.loadlac(self.input_folder, frame_rate=32)
@@ -396,7 +424,8 @@ class LAC(TUM_RGBD):
             max_frames = int(1e5)
 
         self.color_paths = self.color_paths[:max_frames][::stride]
-        self.depth_paths = self.depth_paths[:max_frames][::stride]
+        # self.depth_paths = self.depth_paths[:max_frames][::stride]
+        self.depth_paths = None
         self.poses = self.poses[:max_frames][::stride]
 
         self.w2c_first_pose = np.linalg.inv(self.poses[0])
@@ -413,11 +442,17 @@ class LAC(TUM_RGBD):
         associations = []
         for i, t in enumerate(tstamp_image):
             if tstamp_pose is None:
+                # (image, depth)
                 j = np.argmin(np.abs(tstamp_depth - t))
                 if np.abs(tstamp_depth[j] - t) < max_dt:
                     associations.append((i, j))
-
+            elif tstamp_depth is None:
+                # (image, pose)
+                k = np.argmin(np.abs(tstamp_pose - t))
+                if np.abs(tstamp_pose[k] - t) < max_dt:
+                    associations.append((i, k))
             else:
+                # (image, depth, pose)
                 j = np.argmin(np.abs(tstamp_depth - t))
                 k = np.argmin(np.abs(tstamp_pose - t))
 
@@ -434,15 +469,16 @@ class LAC(TUM_RGBD):
             pose_list = os.path.join(datapath, "pose.txt")
 
         image_list = os.path.join(datapath, "rgb.txt")
-        depth_list = os.path.join(datapath, "depth.txt")
+        # depth_list = os.path.join(datapath, "depth.txt")
 
         image_data = self.parse_list(image_list)
-        depth_data = self.parse_list(depth_list)
+        # depth_data = self.parse_list(depth_list)
         pose_data = self.parse_list(pose_list, skiprows=1)
         pose_vecs = pose_data[:, 1:].astype(np.float64)
 
         tstamp_image = image_data[:, 0].astype(np.float64)
-        tstamp_depth = depth_data[:, 0].astype(np.float64)
+        # tstamp_depth = depth_data[:, 0].astype(np.float64)
+        tstamp_depth = None
         tstamp_pose = pose_data[:, 0].astype(np.float64)
         associations = self.associate_frames(tstamp_image, tstamp_depth, tstamp_pose)
 
@@ -456,9 +492,15 @@ class LAC(TUM_RGBD):
         images, poses, depths, intrinsics = [], [], [], []
         inv_pose = None
         for ix in indicies:
-            (i, j, k) = associations[ix]
+            if tstamp_depth is None:
+                (i, k) = associations[ix]  # (image, pose)
+            elif tstamp_pose is None:
+                (i, j) = associations[ix]  # (image, depth)
+            else:
+                (i, j, k) = associations[ix]
+
             images += [os.path.join(datapath, image_data[i, 1])]
-            depths += [os.path.join(datapath, depth_data[j, 1])]
+            # depths += [os.path.join(datapath, depth_data[j, 1])]
             # timestamp tx ty tz qx qy qz qw
             c2w = self.pose_matrix_from_quaternion(pose_vecs[k])
             if inv_pose is None:
@@ -487,5 +529,5 @@ dataset_dict = {
     "replica": Replica,
     "scannet": ScanNet,
     "tumrgbd": TUM_RGBD,
-    "LAC": LAC,
+    "lac": LAC,
 }

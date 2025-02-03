@@ -20,11 +20,13 @@ from tqdm import tqdm
 from src.utils.datasets import BaseDataset
 from src.utils.Printer import FontColor
 
+
 class PoseTrajectoryFiller:
-    """ This class is used to fill in non-keyframe poses 
-        mainly inherited from DROID-SLAM
+    """This class is used to fill in non-keyframe poses
+    mainly inherited from DROID-SLAM
     """
-    def __init__(self, net, video, printer, device='cuda:0'):
+
+    def __init__(self, net, video, printer, device="cuda:0"):
 
         # split net modules
         self.cnet = net.cnet
@@ -40,13 +42,13 @@ class PoseTrajectoryFiller:
         self.MEAN = torch.tensor([0.485, 0.456, 0.406], device=device)[:, None, None]
         self.STDV = torch.tensor([0.229, 0.224, 0.225], device=device)[:, None, None]
 
-    @torch.amp.autocast('cuda', enabled=True)
+    @torch.amp.autocast("cuda", enabled=True)
     def __feature_encoder(self, image):
-        """ features for correlation volume """
+        """features for correlation volume"""
         return self.fnet(image)
 
     def __fill(self, timestamps, images, depths, intrinsics):
-        """ fill operator """
+        """fill operator"""
         tt = torch.tensor(timestamps, device=self.device)
         images = torch.stack(images, dim=0)
         if depths is not None:
@@ -62,8 +64,8 @@ class PoseTrajectoryFiller:
         Ps = SE3(self.video.poses[:N])
 
         # found the location of current timestamp in keyframe queue
-        t0 = torch.tensor([ts[ts<=t].shape[0] - 1 for t in timestamps])
-        t1 = torch.where(t0 < N-1, t0+1, t0)
+        t0 = torch.tensor([ts[ts <= t].shape[0] - 1 for t in timestamps])
+        t1 = torch.where(t0 < N - 1, t0 + 1, t0)
 
         # time interval between nearby keyframes
         dt = ts[t1] - ts[t0] + 1e-3
@@ -79,24 +81,32 @@ class PoseTrajectoryFiller:
 
         # temporally put the non-keyframe at the end of keyframe queue
         self.video.counter.value += M
-        self.video[N:N+M] = (tt, images[:, 0], Gs.data, 1, depths, intrinsics / 8.0, fmap)
+        self.video[N : N + M] = (
+            tt,
+            images[:, 0],
+            Gs.data,
+            1,
+            depths,
+            intrinsics / 8.0,
+            fmap,
+        )
 
         graph = FactorGraph(self.video, self.update)
         # build edge between current frame and nearby keyframes for optimization
-        graph.add_factors(t0.cuda(), torch.arange(N, N+M).cuda())
-        graph.add_factors(t1.cuda(), torch.arange(N, N+M).cuda())
+        graph.add_factors(t0.cuda(), torch.arange(N, N + M).cuda())
+        graph.add_factors(t1.cuda(), torch.arange(N, N + M).cuda())
 
         for _ in range(12):
-            graph.update(N, N+M, motion_only=True)
+            graph.update(N, N + M, motion_only=True)
 
-        Gs = SE3(self.video.poses[N:N+M].clone())
+        Gs = SE3(self.video.poses[N : N + M].clone())
         self.video.counter.value -= M
 
         return [Gs]
 
     @torch.no_grad()
-    def __call__(self, image_stream:BaseDataset):
-        """ fill in poses of non-keyframe images. """
+    def __call__(self, image_stream: BaseDataset):
+        """fill in poses of non-keyframe images."""
 
         # store all camera poses
         pose_list = []
@@ -105,9 +115,9 @@ class PoseTrajectoryFiller:
         images = []
         intrinsics = []
 
-        self.printer.print("Filling full trajectory ...",FontColor.INFO)
+        self.printer.print("Filling full trajectory ...", FontColor.INFO)
         intrinsic = image_stream.get_intrinsic()
-        for (timestamp, image, _ , _)  in tqdm(image_stream):
+        for timestamp, image, _, _ in tqdm(image_stream):
             timestamps.append(timestamp)
             images.append(image)
             intrinsics.append(intrinsic)

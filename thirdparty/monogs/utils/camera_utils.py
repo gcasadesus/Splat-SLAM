@@ -6,7 +6,10 @@
 import torch
 from torch import nn
 
-from thirdparty.gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
+from thirdparty.gaussian_splatting.utils.graphics_utils import (
+    getProjectionMatrix2,
+    getWorld2View2,
+)
 from thirdparty.monogs.utils.slam_utils import image_gradient, image_gradient_mask
 
 
@@ -52,33 +55,25 @@ class Camera(nn.Module):
         self.image_height = image_height
         self.image_width = image_width
 
-        # Note that we only optimize the delta pose to the 
+        # Note that we only optimize the delta pose to the
         # previous pose. We keep track of the absolute pose
         # in the self.T and self.R variables.
-        self.cam_rot_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
-        self.cam_trans_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
+        self.cam_rot_delta = nn.Parameter(torch.zeros(3, requires_grad=True, device=device))
+        self.cam_trans_delta = nn.Parameter(torch.zeros(3, requires_grad=True, device=device))
 
-        self.exposure_a = nn.Parameter(
-            torch.tensor([0.0], requires_grad=True, device=device)
-        )
-        self.exposure_b = nn.Parameter(
-            torch.tensor([0.0], requires_grad=True, device=device)
-        )
+        self.exposure_a = nn.Parameter(torch.tensor([0.0], requires_grad=True, device=device))
+        self.exposure_b = nn.Parameter(torch.tensor([0.0], requires_grad=True, device=device))
 
         self.projection_matrix = projection_matrix.to(device=device)
 
     @staticmethod
     def init_from_dataset(dataset, data, projection_matrix):
-        
+
         return Camera(
             data["idx"],
             data["gt_color"],
-            data["glorie_depth"], # depth as in GlORIE-SLAM
-            data["glorie_pose"], # pose as in GlORIE-SLAM
+            data["glorie_depth"],  # depth as in GlORIE-SLAM
+            data["glorie_pose"],  # pose as in GlORIE-SLAM
             projection_matrix,
             dataset.fx,
             dataset.fy,
@@ -97,11 +92,7 @@ class Camera(nn.Module):
 
     @property
     def full_proj_transform(self):
-        return (
-            self.world_view_transform.unsqueeze(0).bmm(
-                self.projection_matrix.unsqueeze(0)
-            )
-        ).squeeze(0)
+        return (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
 
     @property
     def camera_center(self):

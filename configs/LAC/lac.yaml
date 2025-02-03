@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-dataset: 'LAC'
+dataset: 'lac'
 
 mapping:
   Calibration:
@@ -31,12 +31,11 @@ tracking:
     BA_type: "DBA"
     normalize: False
 
-cam:  #NOTE: intrinsic is different per scene in TUM
-  # refer to https://vision.in.tum.de/data/datasets/rgbd-dataset/file_formats#intrinsic_camera_calibration_of_the_kinect
+cam:  
   png_depth_scale: 5000.0 #for depth image in png format
   ### target/output camera settings, camera_size -> resize -> crop -> target_size
-  H_edge: 8
-  W_edge: 8
+  H_edge: 0
+  W_edge: 0
   H_out: 384
   W_out: 512
 

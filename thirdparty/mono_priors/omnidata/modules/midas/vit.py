@@ -10,12 +10,14 @@ import types
 import math
 import torch.nn.functional as F
 
+
 def unflatten_with_named_tensor(input, dim, sizes):
     """Workaround for unflattening with named tensor."""
     # tracer acts up with unflatten. See https://github.com/pytorch/pytorch/issues/49538
-    new_shape = list(input.shape)[:dim] + list(sizes) + list(input.shape)[dim+1:]
+    new_shape = list(input.shape)[:dim] + list(sizes) + list(input.shape)[dim + 1 :]
     return input.view(*new_shape)
-    
+
+
 class Slice(nn.Module):
     def __init__(self, start_index=1):
         super(Slice, self).__init__()
@@ -78,14 +80,12 @@ def forward_vit(pretrained, x):
     layer_3 = pretrained.act_postprocess3[0:2](layer_3)
     layer_4 = pretrained.act_postprocess4[0:2](layer_4)
 
-
     unflattened_dim = 2
     unflattened_size = (
-        int(torch.div(h, pretrained.model.patch_size[1], rounding_mode='floor')),
-        int(torch.div(w, pretrained.model.patch_size[0], rounding_mode='floor')),
+        int(torch.div(h, pretrained.model.patch_size[1], rounding_mode="floor")),
+        int(torch.div(w, pretrained.model.patch_size[0], rounding_mode="floor")),
     )
     unflatten = nn.Sequential(nn.Unflatten(unflattened_dim, unflattened_size))
-    
 
     if layer_1.ndim == 3:
         layer_1 = unflatten(layer_1)
@@ -125,7 +125,9 @@ def forward_flex(self, x):
     b, c, h, w = x.shape
 
     pos_embed = self._resize_pos_embed(
-        self.pos_embed, torch.div(h, self.patch_size[1], rounding_mode='floor'), torch.div(w, self.patch_size[0], rounding_mode='floor')
+        self.pos_embed,
+        torch.div(h, self.patch_size[1], rounding_mode="floor"),
+        torch.div(w, self.patch_size[0], rounding_mode="floor"),
     )
 
     B = x.shape[0]
@@ -138,15 +140,11 @@ def forward_flex(self, x):
     x = self.patch_embed.proj(x).flatten(2).transpose(1, 2)
 
     if getattr(self, "dist_token", None) is not None:
-        cls_tokens = self.cls_token.expand(
-            B, -1, -1
-        )  # stole cls_tokens impl from Phil Wang, thanks
+        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         dist_token = self.dist_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, dist_token, x), dim=1)
     else:
-        cls_tokens = self.cls_token.expand(
-            B, -1, -1
-        )  # stole cls_tokens impl from Phil Wang, thanks
+        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
 
     x = x + pos_embed
@@ -176,13 +174,9 @@ def get_readout_oper(vit_features, features, use_readout, start_index=1):
     elif use_readout == "add":
         readout_oper = [AddReadout(start_index)] * len(features)
     elif use_readout == "project":
-        readout_oper = [
-            ProjectReadout(vit_features, start_index) for out_feat in features
-        ]
+        readout_oper = [ProjectReadout(vit_features, start_index) for out_feat in features]
     else:
-        assert (
-            False
-        ), "wrong operation for readout token, use_readout can be 'ignore', 'add', or 'project'"
+        assert False, "wrong operation for readout token, use_readout can be 'ignore', 'add', or 'project'"
 
     return readout_oper
 
@@ -294,9 +288,7 @@ def _make_vit_b16_backbone(
     # We inject this function into the VisionTransformer instances so that
     # we can use it with interpolated position embeddings without modifying the library source.
     pretrained.model.forward_flex = types.MethodType(forward_flex, pretrained.model)
-    pretrained.model._resize_pos_embed = types.MethodType(
-        _resize_pos_embed, pretrained.model
-    )
+    pretrained.model._resize_pos_embed = types.MethodType(_resize_pos_embed, pretrained.model)
 
     return pretrained
 
@@ -318,24 +310,18 @@ def _make_pretrained_vitb16_384(pretrained, use_readout="ignore", hooks=None):
     model = timm.create_model("vit_base_patch16_384", pretrained=pretrained)
 
     hooks = [2, 5, 8, 11] if hooks == None else hooks
-    return _make_vit_b16_backbone(
-        model, features=[96, 192, 384, 768], hooks=hooks, use_readout=use_readout
-    )
+    return _make_vit_b16_backbone(model, features=[96, 192, 384, 768], hooks=hooks, use_readout=use_readout)
 
 
 def _make_pretrained_deitb16_384(pretrained, use_readout="ignore", hooks=None):
     model = timm.create_model("vit_deit_base_patch16_384", pretrained=pretrained)
 
     hooks = [2, 5, 8, 11] if hooks == None else hooks
-    return _make_vit_b16_backbone(
-        model, features=[96, 192, 384, 768], hooks=hooks, use_readout=use_readout
-    )
+    return _make_vit_b16_backbone(model, features=[96, 192, 384, 768], hooks=hooks, use_readout=use_readout)
 
 
 def _make_pretrained_deitb16_distil_384(pretrained, use_readout="ignore", hooks=None):
-    model = timm.create_model(
-        "vit_deit_base_distilled_patch16_384", pretrained=pretrained
-    )
+    model = timm.create_model("vit_deit_base_distilled_patch16_384", pretrained=pretrained)
 
     hooks = [2, 5, 8, 11] if hooks == None else hooks
     return _make_vit_b16_backbone(
@@ -365,12 +351,8 @@ def _make_vit_b_rn50_backbone(
         pretrained.model.blocks[hooks[0]].register_forward_hook(get_activation("1"))
         pretrained.model.blocks[hooks[1]].register_forward_hook(get_activation("2"))
     else:
-        pretrained.model.patch_embed.backbone.stages[0].register_forward_hook(
-            get_activation("1")
-        )
-        pretrained.model.patch_embed.backbone.stages[1].register_forward_hook(
-            get_activation("2")
-        )
+        pretrained.model.patch_embed.backbone.stages[0].register_forward_hook(get_activation("1"))
+        pretrained.model.patch_embed.backbone.stages[1].register_forward_hook(get_activation("2"))
 
     pretrained.model.blocks[hooks[2]].register_forward_hook(get_activation("3"))
     pretrained.model.blocks[hooks[3]].register_forward_hook(get_activation("4"))
@@ -426,12 +408,8 @@ def _make_vit_b_rn50_backbone(
             ),
         )
     else:
-        pretrained.act_postprocess1 = nn.Sequential(
-            nn.Identity(), nn.Identity(), nn.Identity()
-        )
-        pretrained.act_postprocess2 = nn.Sequential(
-            nn.Identity(), nn.Identity(), nn.Identity()
-        )
+        pretrained.act_postprocess1 = nn.Sequential(nn.Identity(), nn.Identity(), nn.Identity())
+        pretrained.act_postprocess2 = nn.Sequential(nn.Identity(), nn.Identity(), nn.Identity())
 
     pretrained.act_postprocess3 = nn.Sequential(
         readout_oper[2],
@@ -475,19 +453,14 @@ def _make_vit_b_rn50_backbone(
 
     # We inject this function into the VisionTransformer instances so that
     # we can use it with interpolated position embeddings without modifying the library source.
-    pretrained.model._resize_pos_embed = types.MethodType(
-        _resize_pos_embed, pretrained.model
-    )
+    pretrained.model._resize_pos_embed = types.MethodType(_resize_pos_embed, pretrained.model)
 
     return pretrained
 
 
-def _make_pretrained_vitb_rn50_384(
-    pretrained, use_readout="ignore", hooks=None, use_vit_only=False
-):
+def _make_pretrained_vitb_rn50_384(pretrained, use_readout="ignore", hooks=None, use_vit_only=False):
     # model = timm.create_model("vit_base_resnet50_384", pretrained=pretrained)
     model = timm.create_model("vit_base_r50_s16_384.orig_in21k_ft_in1k", pretrained=pretrained)
-
 
     hooks = [0, 1, 8, 11] if hooks == None else hooks
     return _make_vit_b_rn50_backbone(

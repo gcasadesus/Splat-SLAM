@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 import cv2
 import numpy as np
 import open3d as o3d
@@ -31,10 +32,16 @@ from src.utils.Printer import Printer, FontColor
 
 from thirdparty.glorie_slam.depth_video import DepthVideo
 from thirdparty.gaussian_splatting.gaussian_renderer import render
-from thirdparty.gaussian_splatting.utils.general_utils import rotation_matrix_to_quaternion, quaternion_multiply
+from thirdparty.gaussian_splatting.utils.general_utils import (
+    rotation_matrix_to_quaternion,
+    quaternion_multiply,
+)
 from thirdparty.gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from thirdparty.gaussian_splatting.scene.gaussian_model import GaussianModel
-from thirdparty.gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
+from thirdparty.gaussian_splatting.utils.graphics_utils import (
+    getProjectionMatrix2,
+    getWorld2View2,
+)
 from thirdparty.monogs.utils.pose_utils import update_pose
 from thirdparty.monogs.utils.slam_utils import get_loss_mapping, get_median_depth
 from thirdparty.monogs.utils.camera_utils import Camera
@@ -45,14 +52,15 @@ class Mapper(object):
     Mapper thread.
 
     """
-    def __init__(self, slam, pipe:Connection):
+
+    def __init__(self, slam, pipe: Connection):
         # setup seed
         setup_seed(slam.cfg["setup_seed"])
         torch.autograd.set_detect_anomaly(True)
 
         self.config = slam.cfg
-        self.printer:Printer = slam.printer
-        if self.config['only_tracking']:
+        self.printer: Printer = slam.printer
+        if self.config["only_tracking"]:
             return
         self.pipe = pipe
         self.verbose = slam.verbose
@@ -69,8 +77,8 @@ class Mapper(object):
         self.current_window = []
         self.initialized = True
         self.keyframe_optimizers = None
-      
-        self.video:DepthVideo = slam.video
+
+        self.video: DepthVideo = slam.video
 
         model_params = munchify(self.config["mapping"]["model_params"])
         opt_params = munchify(self.config["mapping"]["opt_params"])
@@ -94,12 +102,10 @@ class Mapper(object):
 
         self.set_hyperparams()
 
-        self.device = torch.device(self.config['device'])
-       
-        self.frame_reader = get_dataset(
-            self.config, device=self.device)
+        self.device = torch.device(self.config["device"])
 
-        
+        self.frame_reader = get_dataset(self.config, device=self.device)
+
     def set_pipe(self, pipe):
         self.pipe = pipe
 
@@ -112,33 +118,24 @@ class Mapper(object):
         self.init_gaussian_update = mapping_config["Training"]["init_gaussian_update"]
         self.init_gaussian_reset = mapping_config["Training"]["init_gaussian_reset"]
         self.init_gaussian_th = mapping_config["Training"]["init_gaussian_th"]
-        self.init_gaussian_extent = (
-            self.cameras_extent * mapping_config["Training"]["init_gaussian_extent"]
-        )
+        self.init_gaussian_extent = self.cameras_extent * mapping_config["Training"]["init_gaussian_extent"]
         self.mapping_itr_num = mapping_config["Training"]["mapping_itr_num"]
         self.gaussian_update_every = mapping_config["Training"]["gaussian_update_every"]
         self.gaussian_update_offset = mapping_config["Training"]["gaussian_update_offset"]
         self.gaussian_th = mapping_config["Training"]["gaussian_th"]
-        self.gaussian_extent = (
-            self.cameras_extent * mapping_config["Training"]["gaussian_extent"]
-        )
+        self.gaussian_extent = self.cameras_extent * mapping_config["Training"]["gaussian_extent"]
         self.gaussian_reset = mapping_config["Training"]["gaussian_reset"]
         self.size_threshold = mapping_config["Training"]["size_threshold"]
         self.window_size = mapping_config["Training"]["window_size"]
 
-        self.save_dir = self.config['data']['output'] + '/' + self.config['scene']
+        self.save_dir = self.config["data"]["output"] + "/" + self.config["scene"]
 
-        self.move_points = self.config['mapping']['move_points']
-        self.online_plotting = self.config['mapping']['online_plotting']
-
-        
+        self.move_points = self.config["mapping"]["move_points"]
+        self.online_plotting = self.config["mapping"]["online_plotting"]
 
     def add_next_kf(self, frame_idx, viewpoint, init=False, scale=2.0, depth_map=None):
         # This function computes the new Gaussians to be added given a new keyframe
-        self.gaussians.extend_from_pcd_seq(
-            viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map
-        )
-
+        self.gaussians.extend_from_pcd_seq(viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map)
 
     def reset(self):
         self.iteration_count = 0
@@ -150,12 +147,12 @@ class Mapper(object):
 
         # remove all gaussians
         self.gaussians.prune_points(self.gaussians.unique_kfIDs >= 0)
-    
+
     def update_mapping_points(self, frame_idx, w2c, w2c_old, depth, depth_old, intrinsics, method=None):
         if method == "rigid":
             # just move the points according to their SE(3) transformation without updating depth
-            frame_idxs = self.gaussians.unique_kfIDs # idx which anchored the set of points
-            frame_mask = (frame_idxs==frame_idx) # global variable
+            frame_idxs = self.gaussians.unique_kfIDs  # idx which anchored the set of points
+            frame_mask = frame_idxs == frame_idx  # global variable
             if frame_mask.sum() == 0:
                 return
             # Retrieve current set of points to be deformed
@@ -175,16 +172,16 @@ class Mapper(object):
             # Convert transformation to quaternion
             transformation = rotation_matrix_to_quaternion(transformation.unsqueeze(0))
             rots[frame_mask] = quaternion_multiply(transformation.expand_as(rots[frame_mask]), rots[frame_mask])
-           
+
             with torch.no_grad():
                 self.gaussians._rotation = self.gaussians.replace_tensor_to_optimizer(rots, "rotation")["rotation"]
         else:
             # Update pose and depth by projecting points into the pixel space to find updated correspondences.
             # This strategy also adjusts the scale of the gaussians to account for the distance change from the camera
-           
+
             depth = depth.to(self.device)
-            frame_idxs = self.gaussians.unique_kfIDs # idx which anchored the set of points
-            frame_mask = (frame_idxs==frame_idx) # global variable
+            frame_idxs = self.gaussians.unique_kfIDs  # idx which anchored the set of points
+            frame_mask = frame_idxs == frame_idx  # global variable
             if frame_mask.sum() == 0:
                 return
 
@@ -204,10 +201,10 @@ class Mapper(object):
             pixel_locations[:, 0] = torch.clamp(pixel_locations[:, 0], min=0, max=width - 1)
             pixel_locations[:, 1] = torch.clamp(pixel_locations[:, 1], min=0, max=height - 1)
 
-            # Extract the depth at those pixel locations from the new depth 
+            # Extract the depth at those pixel locations from the new depth
             depth = depth[pixel_locations[:, 1], pixel_locations[:, 0]]
             depth_old = depth_old[pixel_locations[:, 1], pixel_locations[:, 0]]
-            # Next, we can either move the points to the new pose and then adjust the 
+            # Next, we can either move the points to the new pose and then adjust the
             # depth or the other way around.
             # Lets adjust the depth per point first
             # First we need to transform the global means into the old camera frame
@@ -215,15 +212,15 @@ class Mapper(object):
             pts4 = torch.cat((means, pix_ones), dim=1)
             means_cam = (w2c_old @ pts4.T).T[:, :3]
 
-            rescale_scale = (1 + 1/(means_cam[:, 2])*(depth - depth_old)).unsqueeze(-1) # shift
+            rescale_scale = (1 + 1 / (means_cam[:, 2]) * (depth - depth_old)).unsqueeze(-1)  # shift
             # account for 0 depth values - then just do rigid deformation
             rigid_mask = torch.logical_or(depth == 0, depth_old == 0)
             rescale_scale[rigid_mask] = 1
             if (rescale_scale <= 0.0).sum() > 0:
                 rescale_scale[rescale_scale <= 0.0] = 1
-        
+
             rescale_mean = rescale_scale.repeat(1, 3)
-            means_cam = rescale_mean*means_cam
+            means_cam = rescale_mean * means_cam
 
             # Transform back means_cam to the world space
             pts4 = torch.cat((means_cam, pix_ones), dim=1)
@@ -254,30 +251,34 @@ class Mapper(object):
             scales[frame_mask] = scales[frame_mask] + torch.log(rescale_scale)
             self.gaussians._scaling = self.gaussians.replace_tensor_to_optimizer(scales, "scaling")["scaling"]
 
-
     def get_w2c_and_depth(self, video_idx, idx, mono_depth, depth_gt, print_info=False, init=False):
-        est_droid_depth, valid_depth_mask, c2w = self.video.get_depth_and_pose(video_idx,self.device)
+        est_droid_depth, valid_depth_mask, c2w = self.video.get_depth_and_pose(video_idx, self.device)
         c2w = c2w.to(self.device)
         w2c = torch.linalg.inv(c2w)
         if print_info:
-            print(f"valid depth number: {valid_depth_mask.sum().item()}, " 
-                    f"valid depth ratio: {(valid_depth_mask.sum()/(valid_depth_mask.shape[0]*valid_depth_mask.shape[1])).item()}")
+            print(
+                f"valid depth number: {valid_depth_mask.sum().item()}, "
+                f"valid depth ratio: {(valid_depth_mask.sum()/(valid_depth_mask.shape[0]*valid_depth_mask.shape[1])).item()}"
+            )
         if valid_depth_mask.sum() < 100:
             invalid = True
-            print(f"Skip mapping frame {idx} at video idx {video_idx} because of not enough valid depth ({valid_depth_mask.sum()}).")  
+            print(
+                f"Skip mapping frame {idx} at video idx {video_idx} because of not enough valid depth ({valid_depth_mask.sum()})."
+            )
         else:
             invalid = False
 
         est_droid_depth[~valid_depth_mask] = 0
         if not invalid:
-            mono_valid_mask = mono_depth < (mono_depth.mean()*3)
-            mono_depth[mono_depth > 4*mono_depth.mean()] = 0
+            mono_valid_mask = mono_depth < (mono_depth.mean() * 3)
+            mono_depth[mono_depth > 4 * mono_depth.mean()] = 0
             from scipy.ndimage import binary_erosion
+
             mono_depth = mono_depth.cpu().numpy()
             binary_image = (mono_depth > 0).astype(int)
             # Add padding around the binary_image to protect the borders
             iterations = 5
-            padded_binary_image = np.pad(binary_image, pad_width=iterations, mode='constant', constant_values=1)
+            padded_binary_image = np.pad(binary_image, pad_width=iterations, mode="constant", constant_values=1)
             structure = np.ones((3, 3), dtype=int)
             # Apply binary erosion with padding
             eroded_padded_image = binary_erosion(padded_binary_image, structure=structure, iterations=iterations)
@@ -287,11 +288,18 @@ class Mapper(object):
             mono_depth[eroded_image == 0] = 0
 
             if (mono_depth == 0).sum() > 0:
-                mono_depth = torch.from_numpy(cv2.inpaint(mono_depth, (mono_depth == 0).astype(np.uint8), inpaintRadius=3, flags=cv2.INPAINT_NS)).to(self.device)
+                mono_depth = torch.from_numpy(
+                    cv2.inpaint(
+                        mono_depth,
+                        (mono_depth == 0).astype(np.uint8),
+                        inpaintRadius=3,
+                        flags=cv2.INPAINT_NS,
+                    )
+                ).to(self.device)
             else:
                 mono_depth = torch.from_numpy(mono_depth).to(self.device)
 
-            valid_mask = torch.from_numpy(eroded_image).to(self.device)*valid_depth_mask # new
+            valid_mask = torch.from_numpy(eroded_image).to(self.device) * valid_depth_mask  # new
 
             cur_wq = self.video.get_depth_scale_and_shift(video_idx, mono_depth, est_droid_depth, valid_mask)
             mono_depth_wq = mono_depth * cur_wq[0] + cur_wq[1]
@@ -303,9 +311,7 @@ class Mapper(object):
     def initialize_map(self, cur_frame_idx, viewpoint):
         for mapping_iteration in range(self.init_itr_num):
             self.iteration_count += 1
-            render_pkg = render(
-                viewpoint, self.gaussians, self.pipeline_params, self.background
-            )
+            render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
             (
                 image,
                 viewspace_point_tensor,
@@ -324,7 +330,12 @@ class Mapper(object):
                 render_pkg["n_touched"],
             )
             loss_init = get_loss_mapping(
-                self.config["mapping"], image, depth, viewpoint, opacity, initialization=True
+                self.config["mapping"],
+                image,
+                depth,
+                viewpoint,
+                opacity,
+                initialization=True,
             )
             loss_init.backward()
 
@@ -333,9 +344,7 @@ class Mapper(object):
                     self.gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter],
                 )
-                self.gaussians.add_densification_stats(
-                    viewspace_point_tensor, visibility_filter
-                )
+                self.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
                 if mapping_iteration % self.init_gaussian_update == 0:
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
@@ -361,11 +370,10 @@ class Mapper(object):
             from src.utils.eval_utils import plot_rgbd_silhouette
             import cv2
             import numpy as np
+
             cur_idx = self.current_window[np.array(self.current_window).argmax()]
             viewpoint = self.viewpoints[cur_idx]
-            render_pkg = render(
-                                viewpoint, self.gaussians, self.pipeline_params, self.background
-                            )
+            render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
             (
                 image,
                 depth,
@@ -378,9 +386,7 @@ class Mapper(object):
 
             image = torch.clamp(image, 0.0, 1.0)
             gt = (gt_image.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8)
-            pred = (image.detach().cpu().numpy().transpose((1, 2, 0)) * 255).astype(
-                np.uint8
-            )
+            pred = (image.detach().cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8)
             gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
             pred = cv2.cvtColor(pred, cv2.COLOR_BGR2RGB)
             mask = gt_image > 0
@@ -391,9 +397,18 @@ class Mapper(object):
 
             # Add plotting 2x3 grid here
             plot_dir = self.save_dir + "/online_plots"
-            plot_rgbd_silhouette(gt_image, gt_depth, image, depth, diff_depth_l1,
-                                    psnr_score.item(), depth_l1, plot_dir=plot_dir, idx=str(cur_idx),
-                                    diff_rgb=np.abs(gt - pred))
+            plot_rgbd_silhouette(
+                gt_image,
+                gt_depth,
+                image,
+                depth,
+                diff_depth_l1,
+                psnr_score.item(),
+                depth_l1,
+                plot_dir=plot_dir,
+                idx=str(cur_idx),
+                diff_rgb=np.abs(gt - pred),
+            )
 
         return render_pkg
 
@@ -426,9 +441,7 @@ class Mapper(object):
             for cam_idx in range(len(current_window)):
                 viewpoint = viewpoint_stack[cam_idx]
                 keyframes_opt.append(viewpoint)
-                render_pkg = render(
-                    viewpoint, self.gaussians, self.pipeline_params, self.background
-                )
+                render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
                 (
                     image,
                     viewspace_point_tensor,
@@ -447,9 +460,7 @@ class Mapper(object):
                     render_pkg["n_touched"],
                 )
 
-                loss_mapping += get_loss_mapping(
-                    self.config["mapping"], image, depth, viewpoint, opacity
-                )
+                loss_mapping += get_loss_mapping(self.config["mapping"], image, depth, viewpoint, opacity)
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
@@ -457,9 +468,7 @@ class Mapper(object):
 
             for cam_idx in torch.randperm(len(random_viewpoint_stack))[:2]:
                 viewpoint = random_viewpoint_stack[cam_idx]
-                render_pkg = render(
-                    viewpoint, self.gaussians, self.pipeline_params, self.background
-                )
+                render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
                 (
                     image,
                     viewspace_point_tensor,
@@ -477,9 +486,7 @@ class Mapper(object):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
-                loss_mapping += get_loss_mapping(
-                    self.config["mapping"], image, depth, viewpoint, opacity
-                )
+                loss_mapping += get_loss_mapping(self.config["mapping"], image, depth, viewpoint, opacity)
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
@@ -514,9 +521,7 @@ class Mapper(object):
                             # only prune keyframes which are relatively new
                             sorted_window = sorted(current_window, reverse=True)
                             mask = self.gaussians.unique_kfIDs >= sorted_window[2]
-                            to_prune = torch.logical_and(
-                                self.gaussians.n_obs <= prune_coviz, mask
-                            )
+                            to_prune = torch.logical_and(self.gaussians.n_obs <= prune_coviz, mask)
                     return False
 
                 for idx in range(len(viewspace_point_tensor_acm)):
@@ -524,14 +529,9 @@ class Mapper(object):
                         self.gaussians.max_radii2D[visibility_filter_acm[idx]],
                         radii_acm[idx][visibility_filter_acm[idx]],
                     )
-                    self.gaussians.add_densification_stats(
-                        viewspace_point_tensor_acm[idx], visibility_filter_acm[idx]
-                    )
+                    self.gaussians.add_densification_stats(viewspace_point_tensor_acm[idx], visibility_filter_acm[idx])
 
-                update_gaussian = (
-                    self.iteration_count % self.gaussian_update_every
-                    == self.gaussian_update_offset
-                )
+                update_gaussian = self.iteration_count % self.gaussian_update_every == self.gaussian_update_offset
                 if update_gaussian:
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
@@ -539,7 +539,7 @@ class Mapper(object):
                         self.gaussian_extent,
                         self.size_threshold,
                     )
-                    gaussian_split = True # not used it seems
+                    gaussian_split = True  # not used it seems
 
                 ## Opacity reset
                 # self.iteration_count is a global parameter. We use gaussian reset
@@ -547,10 +547,11 @@ class Mapper(object):
                 # and there are 160 keyframes in the sequence, we do resetting
                 # 4 times. Using more mapping iterations leads to more resetting
                 # which can prune away more gaussians.
-                if (self.iteration_count % self.gaussian_reset) == 0 and (
-                    not update_gaussian
-                ):
-                    self.printer.print("Resetting the opacity of non-visible Gaussians", FontColor.MAPPER)
+                if (self.iteration_count % self.gaussian_reset) == 0 and (not update_gaussian):
+                    self.printer.print(
+                        "Resetting the opacity of non-visible Gaussians",
+                        FontColor.MAPPER,
+                    )
                     self.gaussians.reset_opacity_nonvisible(visibility_filter_acm)
                     gaussian_split = True
 
@@ -573,11 +574,10 @@ class Mapper(object):
             from src.utils.eval_utils import plot_rgbd_silhouette
             import cv2
             import numpy as np
+
             cur_idx = current_window[np.array(current_window).argmax()]
             viewpoint = self.viewpoints[cur_idx]
-            render_pkg = render(
-                                viewpoint, self.gaussians, self.pipeline_params, self.background
-                            )
+            render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
             (
                 image,
                 depth,
@@ -586,17 +586,15 @@ class Mapper(object):
                 render_pkg["depth"].detach(),
             )
             gt_image = viewpoint.original_image
-            gt_depth = viewpoint.depth 
+            gt_depth = viewpoint.depth
 
-            if viewpoint.uid != self.video_idxs[0]: # first mapping frame is reference for exposure
+            if viewpoint.uid != self.video_idxs[0]:  # first mapping frame is reference for exposure
                 image = (torch.exp(viewpoint.exposure_a.detach())) * image + viewpoint.exposure_b.detach()
 
             image = torch.clamp(image, 0.0, 1.0)
             gt = (gt_image.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8)
 
-            pred = (image.detach().cpu().numpy().transpose((1, 2, 0)) * 255).astype(
-                np.uint8
-            )
+            pred = (image.detach().cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8)
             gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
             pred = cv2.cvtColor(pred, cv2.COLOR_BGR2RGB)
             mask = gt_image > 0
@@ -607,12 +605,20 @@ class Mapper(object):
 
             # Add plotting 2x3 grid here
             plot_dir = self.save_dir + "/online_plots"
-            plot_rgbd_silhouette(gt_image, gt_depth, image, depth, diff_depth_l1,
-                                    psnr_score.item(), depth_l1, plot_dir=plot_dir, idx=str(cur_idx),
-                                    diff_rgb=np.abs(gt - pred))
-        
-        return gaussian_split
+            plot_rgbd_silhouette(
+                gt_image,
+                gt_depth,
+                image,
+                depth,
+                diff_depth_l1,
+                psnr_score.item(),
+                depth_l1,
+                plot_dir=plot_dir,
+                idx=str(cur_idx),
+                diff_rgb=np.abs(gt - pred),
+            )
 
+        return gaussian_split
 
     def final_refine(self, prune=False, iters=26000):
         self.printer.print("Starting final refinement", FontColor.MAPPER)
@@ -620,13 +626,21 @@ class Mapper(object):
         # Do final update of depths and poses
         for keyframe_idx, frame_idx in zip(self.video_idxs, self.keyframe_idxs):
             _, _, depth_gtd, _ = self.frame_reader[frame_idx]
-            depth_gt_numpy = depth_gtd.cpu().numpy()
+            depth_gt_numpy = depth_gtd.cpu().numpy() if depth_gtd is not None else None
             intrinsics = as_intrinsics_matrix(self.frame_reader.get_intrinsic()).to(self.device)
             mono_depth = load_mono_depth(frame_idx, self.save_dir).to(self.device)
-            depth_temp, w2c_temp, invalid = self.get_w2c_and_depth(keyframe_idx, frame_idx, mono_depth, depth_gt_numpy, init=False)
-            
+            depth_temp, w2c_temp, invalid = self.get_w2c_and_depth(
+                keyframe_idx, frame_idx, mono_depth, depth_gt_numpy, init=False
+            )
+
             # Update tracking parameters
-            w2c_old = torch.cat((self.cameras[keyframe_idx].R, self.cameras[keyframe_idx].T.unsqueeze(-1)), dim=1)
+            w2c_old = torch.cat(
+                (
+                    self.cameras[keyframe_idx].R,
+                    self.cameras[keyframe_idx].T.unsqueeze(-1),
+                ),
+                dim=1,
+            )
             w2c_old = torch.cat((w2c_old, torch.tensor([[0, 0, 0, 1]], device="cuda")), dim=0)
             self.cameras[keyframe_idx].update_RT(w2c_temp[:3, :3], w2c_temp[:3, 3])
             # Update depth for viewpoint
@@ -641,11 +655,27 @@ class Mapper(object):
             # Update mapping parameters
             if self.move_points and self.is_kf[keyframe_idx]:
                 if invalid:
-                    self.update_mapping_points(keyframe_idx, w2c_temp, w2c_old, depth_temp, self.depth_dict[keyframe_idx], intrinsics, method="rigid")
+                    self.update_mapping_points(
+                        keyframe_idx,
+                        w2c_temp,
+                        w2c_old,
+                        depth_temp,
+                        self.depth_dict[keyframe_idx],
+                        intrinsics,
+                        method="rigid",
+                    )
                 else:
-                    self.update_mapping_points(keyframe_idx, w2c_temp, w2c_old, depth_temp, self.depth_dict[keyframe_idx], intrinsics)
-                    self.depth_dict[keyframe_idx] = depth_temp # not needed since it is the last deformation but keeping for clarity.
-
+                    self.update_mapping_points(
+                        keyframe_idx,
+                        w2c_temp,
+                        w2c_old,
+                        depth_temp,
+                        self.depth_dict[keyframe_idx],
+                        intrinsics,
+                    )
+                    self.depth_dict[keyframe_idx] = (
+                        depth_temp  # not needed since it is the last deformation but keeping for clarity.
+                    )
 
         random_viewpoint_stack = []
         frames_to_optimize = self.config["mapping"]["Training"]["pose_window"]
@@ -664,12 +694,10 @@ class Mapper(object):
             n_touched_acm = []
 
             keyframes_opt = []
-           
+
             rand_idx = np.random.randint(0, len(random_viewpoint_stack))
             viewpoint = random_viewpoint_stack[rand_idx]
-            render_pkg = render(
-                viewpoint, self.gaussians, self.pipeline_params, self.background
-            )
+            render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
             (
                 image,
                 viewspace_point_tensor,
@@ -687,9 +715,7 @@ class Mapper(object):
                 render_pkg["opacity"],
                 render_pkg["n_touched"],
             )
-            loss_mapping += get_loss_mapping(
-                self.config["mapping"], image, depth, viewpoint, opacity
-            )
+            loss_mapping += get_loss_mapping(self.config["mapping"], image, depth, viewpoint, opacity)
             viewspace_point_tensor_acm.append(viewspace_point_tensor)
             visibility_filter_acm.append(visibility_filter)
             radii_acm.append(radii)
@@ -706,9 +732,8 @@ class Mapper(object):
                 # optimize the exposure compensation
                 self.keyframe_optimizers.step()
                 self.keyframe_optimizers.zero_grad(set_to_none=True)
-        
-        self.printer.print("Final refinement done", FontColor.MAPPER)
 
+        self.printer.print("Final refinement done", FontColor.MAPPER)
 
     def initialize(self, cur_frame_idx, viewpoint):
         # self.initialized only False at beginning for monocular MonoGS
@@ -725,7 +750,6 @@ class Mapper(object):
         # Initialise the frame at the ground truth pose
         viewpoint.update_RT(viewpoint.R_gt, viewpoint.T_gt)
 
-
     def add_new_keyframe(self, cur_frame_idx, idx, depth=None, opacity=None):
         rgb_boundary_threshold = self.config["mapping"]["Training"]["rgb_boundary_threshold"]
         self.mapped_video_idxs.append(cur_frame_idx)
@@ -738,7 +762,9 @@ class Mapper(object):
 
         # use the observed depth
         initial_depth = torch.from_numpy(viewpoint.depth).unsqueeze(0)
-        initial_depth[~valid_rgb.cpu()] = 0  # Ignore the invalid rgb pixels. THIS LINE OVERWRITES THE self.viewpoints[cur_frame_idx].depth with "initial_depth"
+        initial_depth[~valid_rgb.cpu()] = (
+            0  # Ignore the invalid rgb pixels. THIS LINE OVERWRITES THE self.viewpoints[cur_frame_idx].depth with "initial_depth"
+        )
         return initial_depth[0].cpu().numpy()
 
     def is_keyframe(
@@ -759,21 +785,17 @@ class Mapper(object):
         last_kf_WC = torch.linalg.inv(last_kf_CW)
         dist = torch.norm((pose_CW @ last_kf_WC)[0:3, 3])
         # multiply by median depth in rgb-only setting to account for scale ambiguity
-        dist_check = dist > kf_translation * self.median_depth 
+        dist_check = dist > kf_translation * self.median_depth
         dist_check2 = dist > kf_min_translation * self.median_depth
 
-        union = torch.logical_or(
-            cur_frame_visibility_filter, occ_aware_visibility[last_keyframe_idx]
-        ).count_nonzero()
+        union = torch.logical_or(cur_frame_visibility_filter, occ_aware_visibility[last_keyframe_idx]).count_nonzero()
         intersection = torch.logical_and(
             cur_frame_visibility_filter, occ_aware_visibility[last_keyframe_idx]
         ).count_nonzero()
         point_ratio_2 = intersection / union
         return (point_ratio_2 < kf_overlap and dist_check2) or dist_check
 
-    def add_to_window(
-        self, cur_frame_idx, cur_frame_visibility_filter, occ_aware_visibility, window
-    ):
+    def add_to_window(self, cur_frame_idx, cur_frame_visibility_filter, occ_aware_visibility, window):
         N_dont_touch = 2
         window = [cur_frame_idx] + window
         # remove frames which has little overlap with the current frame
@@ -783,9 +805,7 @@ class Mapper(object):
         for i in range(N_dont_touch, len(window)):
             kf_idx = window[i]
             # szymkiewicz–simpson coefficient
-            intersection = torch.logical_and(
-                cur_frame_visibility_filter, occ_aware_visibility[kf_idx]
-            ).count_nonzero()
+            intersection = torch.logical_and(cur_frame_visibility_filter, occ_aware_visibility[kf_idx]).count_nonzero()
             denom = min(
                 cur_frame_visibility_filter.count_nonzero(),
                 occ_aware_visibility[kf_idx].count_nonzero(),
@@ -830,11 +850,10 @@ class Mapper(object):
 
         return window, removed_frame
 
-
     def run(self):
         """
         Trigger mapping process, get estimated pose and depth from tracking process,
-        send continue signal to tracking process when the mapping of the current frame finishes.  
+        send continue signal to tracking process when the mapping of the current frame finishes.
         """
         config = self.config
 
@@ -849,16 +868,18 @@ class Mapper(object):
             H=self.frame_reader.H_out,
         ).transpose(0, 1)
         projection_matrix = projection_matrix.to(device=self.device)
-    
+
         num_frames = len(self.frame_reader)
 
         # Initialize list to keep track of Keyframes
-        self.keyframe_idxs = [] # 
-        self.video_idxs = [] # keyframe numbering (note first
+        self.keyframe_idxs = []  #
+        self.video_idxs = []  # keyframe numbering (note first
         # keyframe for mapping is the 7th keyframe in total)
-        self.is_kf = dict() # keys are video_idx and value is boolean. This prevents trying to deform frames that were never mapped.
+        self.is_kf = (
+            dict()
+        )  # keys are video_idx and value is boolean. This prevents trying to deform frames that were never mapped.
         # this is only a problem when the last keyframe is not mapped as this would otherwise be handled by the code.
-        
+
         # Init Variables to keep track of ground truth poses and runtimes
         self.gt_w2c_all_frames = []
 
@@ -875,47 +896,56 @@ class Mapper(object):
         self.cameras = dict()
         self.depth_dict = dict()
 
-
-        while (1):
+        while 1:
             frame_info = self.pipe.recv()
-            idx = frame_info['timestamp'] # frame index
-            video_idx = frame_info['video_idx'] # keyframe index
-            is_finished = frame_info['end']
+            idx = frame_info["timestamp"]  # frame index
+            video_idx = frame_info["video_idx"]  # keyframe index
+            is_finished = frame_info["end"]
 
             if self.verbose:
-                self.printer.print(f"\033[F\rMapping Frame {idx} ...", FontColor.MAPPER)
-            
+                print_end = "\r" if sys.stdout.isatty() else "\n"
+                self.printer.print(f"Mapping Frame {idx}..." + print_end, FontColor.MAPPER)
+
             if is_finished:
                 print("Done with Mapping and Tracking")
                 break
 
-            if self.verbose:
-                print(Fore.GREEN)
-                print("Mapping Frame ", idx)
-                print(Style.RESET_ALL)
+            # if self.verbose:
+            #     print(Fore.GREEN)
+            #     print("Mapping Frame ", idx)
+            #     print(Style.RESET_ALL)
 
             self.keyframe_idxs.append(idx)
             self.video_idxs.append(video_idx)
 
-
             _, color, depth_gt, c2w_gt = self.frame_reader[idx]
             mono_depth = load_mono_depth(idx, self.save_dir).to(self.device)
             color = color.to(self.device)
-            c2w_gt = c2w_gt.to(self.device) 
-            depth_gt_numpy = depth_gt.numpy()
-            depth_gt = depth_gt.to(self.device)
+            c2w_gt = c2w_gt.to(self.device)
+            if depth_gt is not None:
+                depth_gt_numpy = depth_gt.numpy()
+                depth_gt = depth_gt.to(self.device)
+            else:
+                depth_gt_numpy = None
 
             depth, w2c, invalid = self.get_w2c_and_depth(video_idx, idx, mono_depth, depth_gt_numpy, init=False)
 
             if invalid:
                 print("WARNING: Too few valid pixels from droid depth")
-                 # online glorieslam pose and depth
-                data = {"gt_color": color.squeeze(), "glorie_depth": depth.cpu().numpy(), "glorie_pose": w2c, \
-                        "gt_pose": w2c_gt, "idx": video_idx}
+                # online glorieslam pose and depth
+                data = {
+                    "gt_color": color.squeeze(),
+                    "glorie_depth": depth.cpu().numpy(),
+                    "glorie_pose": w2c,
+                    "gt_pose": w2c_gt,
+                    "idx": video_idx,
+                }
                 self.is_kf[video_idx] = False
                 viewpoint = Camera.init_from_dataset(
-                        self.frame_reader, data, projection_matrix, 
-                    )
+                    self.frame_reader,
+                    data,
+                    projection_matrix,
+                )
                 # update the estimated pose to be the glorie pose
                 viewpoint.update_RT(viewpoint.R_gt, viewpoint.T_gt)
                 viewpoint.compute_grad_mask(self.config)
@@ -923,18 +953,25 @@ class Mapper(object):
                 # self.cameras contains all cameras.
                 self.cameras[video_idx] = viewpoint
                 self.pipe.send("continue")
-                continue # too few valid pixels from droid depth
-            
+                continue  # too few valid pixels from droid depth
+
             w2c_gt = torch.linalg.inv(c2w_gt)
             self.gt_w2c_all_frames.append(w2c_gt)
 
             # online glorieslam pose and depth
-            data = {"gt_color": color.squeeze(), "glorie_depth": depth.cpu().numpy(), "glorie_pose": w2c, \
-                    "gt_pose": w2c_gt, "idx": video_idx}
+            data = {
+                "gt_color": color.squeeze(),
+                "glorie_depth": depth.cpu().numpy(),
+                "glorie_pose": w2c,
+                "gt_pose": w2c_gt,
+                "idx": video_idx,
+            }
 
             viewpoint = Camera.init_from_dataset(
-                    self.frame_reader, data, projection_matrix, 
-                )
+                self.frame_reader,
+                data,
+                projection_matrix,
+            )
             # update the estimated pose to be the glorie pose
             viewpoint.update_RT(viewpoint.R_gt, viewpoint.T_gt)
 
@@ -952,13 +989,11 @@ class Mapper(object):
                 # Add first depth map to depth dictionary - important for the first deformation
                 # of the first frame
                 self.depth_dict[video_idx] = depth
-                self.is_kf[video_idx] = True # we map the first keyframe (after warmup)
+                self.is_kf[video_idx] = True  # we map the first keyframe (after warmup)
 
                 self.viewpoints[video_idx] = viewpoint
                 depth = self.add_new_keyframe(video_idx, idx)
-                self.add_next_kf(
-                    video_idx, viewpoint, depth_map=depth, init=True
-                )
+                self.add_next_kf(video_idx, viewpoint, depth_map=depth, init=True)
                 self.initialize_map(video_idx, viewpoint)
                 init = False
                 self.pipe.send("continue")
@@ -969,18 +1004,15 @@ class Mapper(object):
 
             # we need to render from the current pose to obtain the "n_touched" variable
             # which is used during keyframe selection
-            render_pkg = render(
-                        viewpoint, self.gaussians, self.pipeline_params, self.background
-                    )
+            render_pkg = render(viewpoint, self.gaussians, self.pipeline_params, self.background)
 
             # compute median depth which is used during keyframe selection to account for the
-            # global scale ambiguity during rgb-only SLAM 
+            # global scale ambiguity during rgb-only SLAM
             self.median_depth = get_median_depth(render_pkg["depth"], render_pkg["opacity"])
-
 
             # keyframe selection
             last_keyframe_idx = self.current_window[0]
-            
+
             curr_visibility = (render_pkg["n_touched"] > 0).long()
             create_kf = self.is_keyframe(
                 video_idx,
@@ -990,19 +1022,15 @@ class Mapper(object):
             )
             if len(self.current_window) < self.window_size:
                 # When we have not filled up the keyframe window size
-                # we rely on just the covisibility thresholding, not the 
+                # we rely on just the covisibility thresholding, not the
                 # translation thresholds.
-                union = torch.logical_or(
-                    curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
-                ).count_nonzero()
+                union = torch.logical_or(curr_visibility, self.occ_aware_visibility[last_keyframe_idx]).count_nonzero()
                 intersection = torch.logical_and(
                     curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
                 ).count_nonzero()
                 point_ratio = intersection / union
-                create_kf = (
-                    point_ratio < self.config["mapping"]["Training"]["kf_overlap"]
-                )
-            
+                create_kf = point_ratio < self.config["mapping"]["Training"]["kf_overlap"]
+
             if create_kf:
                 self.current_window, removed = self.add_to_window(
                     video_idx,
@@ -1022,18 +1050,26 @@ class Mapper(object):
                 # need to update depth_dict even if the last idx since this is important
                 # for the first deformation of the keyframe
                 _, _, depth_gtd, _ = self.frame_reader[frame_idx]
-                depth_gt_numpy = depth_gtd.cpu().numpy()
+                depth_gt_numpy = depth_gtd.cpu().numpy() if depth_gtd is not None else None
                 mono_depth = load_mono_depth(frame_idx, self.save_dir).to(self.device)
                 # depth_temp, w2c_temp = self.get_w2c_and_depth(keyframe_idx, frame_idx, mono_depth, depth_gt_numpy, init=not init)
-                depth_temp, w2c_temp, invalid = self.get_w2c_and_depth(keyframe_idx, frame_idx, mono_depth, depth_gt_numpy, init=False)
+                depth_temp, w2c_temp, invalid = self.get_w2c_and_depth(
+                    keyframe_idx, frame_idx, mono_depth, depth_gt_numpy, init=False
+                )
 
                 if keyframe_idx not in self.depth_dict and self.is_kf[keyframe_idx]:
                     self.depth_dict[keyframe_idx] = depth_temp
 
                 # No need to move the latest pose and depth
-                if frame_idx != last_idx: 
+                if frame_idx != last_idx:
                     # Update tracking parameters
-                    w2c_old = torch.cat((self.cameras[keyframe_idx].R, self.cameras[keyframe_idx].T.unsqueeze(-1)), dim=1)
+                    w2c_old = torch.cat(
+                        (
+                            self.cameras[keyframe_idx].R,
+                            self.cameras[keyframe_idx].T.unsqueeze(-1),
+                        ),
+                        dim=1,
+                    )
                     w2c_old = torch.cat((w2c_old, torch.tensor([[0, 0, 0, 1]], device="cuda")), dim=0)
                     self.cameras[keyframe_idx].update_RT(w2c_temp[:3, :3], w2c_temp[:3, 3])
                     # Update depth for viewpoint
@@ -1049,20 +1085,35 @@ class Mapper(object):
                     if self.move_points and self.is_kf[keyframe_idx]:
                         if invalid:
                             # if the frame was invalid, we don't update the depth old and just do a rigid correction for this frame
-                            self.update_mapping_points(keyframe_idx, w2c_temp, w2c_old, depth_temp, self.depth_dict[keyframe_idx], intrinsics, method="rigid")
+                            self.update_mapping_points(
+                                keyframe_idx,
+                                w2c_temp,
+                                w2c_old,
+                                depth_temp,
+                                self.depth_dict[keyframe_idx],
+                                intrinsics,
+                                method="rigid",
+                            )
                         else:
-                            self.update_mapping_points(keyframe_idx, w2c_temp, w2c_old, depth_temp, self.depth_dict[keyframe_idx], intrinsics)
-                            self.depth_dict[keyframe_idx] = depth_temp # line does not matter since it is the last deformation anyway
- 
+                            self.update_mapping_points(
+                                keyframe_idx,
+                                w2c_temp,
+                                w2c_old,
+                                depth_temp,
+                                self.depth_dict[keyframe_idx],
+                                intrinsics,
+                            )
+                            self.depth_dict[keyframe_idx] = (
+                                depth_temp  # line does not matter since it is the last deformation anyway
+                            )
+
             # Do mapping
             # self.viewpoints contains the subset of self.cameras where we did mapping
             self.viewpoints[video_idx] = viewpoint
             depth = self.add_new_keyframe(video_idx, idx)
-            self.add_next_kf(video_idx, viewpoint, depth_map=depth, init=False) # set init to True for debugging
+            self.add_next_kf(video_idx, viewpoint, depth_map=depth, init=False)  # set init to True for debugging
 
-            self.initialized = self.initialized or (
-                    len(self.current_window) == self.window_size
-                )
+            self.initialized = self.initialized or (len(self.current_window) == self.window_size)
 
             opt_params = []
             frames_to_optimize = self.config["mapping"]["Training"]["pose_window"]
@@ -1078,18 +1129,14 @@ class Mapper(object):
                         opt_params.append(
                             {
                                 "params": [viewpoint.cam_rot_delta],
-                                "lr": self.config["mapping"]["Training"]["lr"]["cam_rot_delta"]
-                                * 0.5,
+                                "lr": self.config["mapping"]["Training"]["lr"]["cam_rot_delta"] * 0.5,
                                 "name": "rot_{}".format(viewpoint.uid),
                             }
                         )
                         opt_params.append(
                             {
                                 "params": [viewpoint.cam_trans_delta],
-                                "lr": self.config["mapping"]["Training"]["lr"][
-                                    "cam_trans_delta"
-                                ]
-                                * 0.5,
+                                "lr": self.config["mapping"]["Training"]["lr"]["cam_trans_delta"] * 0.5,
                                 "name": "trans_{}".format(viewpoint.uid),
                             }
                         )
@@ -1109,7 +1156,7 @@ class Mapper(object):
                     }
                 )
             self.keyframe_optimizers = torch.optim.Adam(opt_params)
-            
+
             self.map(self.current_window, iters=iter_per_kf)
             self.map(self.current_window, prune=True)
 
