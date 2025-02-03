@@ -184,12 +184,15 @@ class SLAM:
         except Exception as e:
             self.printer.print(e, FontColor.ERROR)
 
+        self.mapper.gaussians.save_ply(self.save_dir + f"/point_cloud/final.ply")
+
         if not self.only_tracking:
             if self.cfg["tracking"]["backend"]["final_ba"]:
                 # The final refine method includes the final update of the poses and depths
                 self.mapper.final_refine(
                     iters=self.cfg["mapping"]["final_refine_iters"]
                 )  # this performs a set of optimizations with RGBD loss to correct
+                self.mapper.gaussians.save_ply(self.save_dir + f"/point_cloud/final_refined.ply")
 
             # prepare aligned camera list of mapped frames
             traj_est_aligned = []

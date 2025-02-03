@@ -320,11 +320,12 @@ class GaussianModel:
             l.append("rot_{}".format(i))
         return l
 
-    def save_ply(self, path):
+    def save_ply(self, path, verbose=False):
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
-        print("Nbr Gaussians: ", xyz.shape)
+        if verbose:
+            print("Nbr Gaussians: ", xyz.shape)
         normals = np.zeros_like(xyz)
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()

@@ -414,9 +414,9 @@ class TUM_RGBD(BaseDataset):
         return pose
 
 
-class LAC(BaseDataset):
+class LACDataset(BaseDataset):
     def __init__(self, cfg, device="cuda:0"):
-        super(LAC, self).__init__(cfg, device)
+        super(LACDataset, self).__init__(cfg, device)
         self.color_paths, self.depth_paths, self.poses = self.loadlac(self.input_folder, frame_rate=32)
         stride = cfg["stride"]
         max_frames = cfg["max_frames"]
@@ -525,9 +525,59 @@ class LAC(BaseDataset):
         return pose
 
 
+class BlueDataset(BaseDataset):
+    def __init__(self, cfg, device="cuda:0"):
+        super(BlueDataset, self).__init__(cfg, device)
+        self.directions: list[str] = cfg["directions"]
+        self.color_paths, self.depth_paths, self.poses = self.loadblue(self.input_folder)
+
+        stride = cfg["stride"]
+        max_frames = cfg["max_frames"]
+        if max_frames < 0:
+            max_frames = int(1e5)
+
+        self.color_paths = self.color_paths[:max_frames][::stride]
+        # self.depth_paths = self.depth_paths[:max_frames][::stride]
+        self.depth_paths = None
+        self.poses = self.poses[:max_frames][::stride]
+        self.w2c_first_pose = np.linalg.inv(self.poses[0])
+        self.n_img = len(self.color_paths)
+
+    def loadblue(self, datapath):
+        import json
+        from scipy.spatial.transform import Rotation
+
+        with open(os.path.join(datapath, "data.json")) as f:
+            data = json.load(f)
+
+        color_paths, depth_paths, poses = [], None, []
+        for d in data:
+            for direction in self.directions:
+                color_paths.append(os.path.join(datapath, "frames", d[direction + "_filename"]))
+
+                pos = d["pos_" + direction.upper() + "CAM_ENU_ENU"]
+                quat = d["quat_" + direction.upper() + "CAM_ENU"]  # scalar first
+                pose = np.eye(4)
+                pose[:3, :3] = Rotation.from_quat(quat, scalar_first=True).as_matrix()
+                pose[:3, 3] = pos
+                poses.append(pose)
+
+        return color_paths, depth_paths, poses
+
+    def pose_matrix_from_quaternion(self, pvec):
+        """convert 4x4 pose matrix to (t, q)"""
+        from scipy.spatial.transform import Rotation
+
+        pose = np.eye(4)
+        pose[:3, :3] = Rotation.from_quat(pvec[3:]).as_matrix()
+        pose[:3, 3] = pvec[:3]
+        return pose
+
+
 dataset_dict = {
     "replica": Replica,
     "scannet": ScanNet,
     "tumrgbd": TUM_RGBD,
-    "lac": LAC,
+    "lac": LACDataset,
+    "blue": BlueDataset,
 }

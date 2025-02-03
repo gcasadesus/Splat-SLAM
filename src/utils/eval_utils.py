@@ -78,7 +78,8 @@ def eval_rendering(
         frame = frames[video_idx]
 
         _, gt_image, gt_depth, _ = dataset[kf_idx]
-        gt_depth = gt_depth.cpu().numpy()
+        if gt_depth is not None:
+            gt_depth = gt_depth.cpu().numpy()
         gt_image = gt_image.squeeze().to("cuda:0")
         # retrieve mono depth
         mono_depth = load_mono_depth(kf_idx, save_dir).to("cuda:0")
@@ -105,16 +106,18 @@ def eval_rendering(
 
         mask = gt_image > 0
 
-        gt_depth = torch.tensor(gt_depth)
+        if gt_depth is not None:
+            gt_depth = torch.tensor(gt_depth)
         depth = depth.detach().cpu()
 
         # compute depth errors
         depth_mask = (depth > 0) * (gt_depth > 0)
         depth = global_scale * depth
-        diff_depth_l1 = torch.abs(depth - gt_depth)
-        diff_depth_l1_gt = diff_depth_l1 * depth_mask
-        depth_l1_gt = diff_depth_l1_gt.sum() / depth_mask.sum()
-        depth_l1_array.append(depth_l1_gt)
+        if gt_depth is not None:
+            diff_depth_l1 = torch.abs(depth - gt_depth)
+            diff_depth_l1_gt = diff_depth_l1 * depth_mask
+            depth_l1_gt = diff_depth_l1_gt.sum() / depth_mask.sum()
+            depth_l1_array.append(depth_l1_gt)
 
         psnr_score = psnr((image[mask]).unsqueeze(0), (gt_image[mask]).unsqueeze(0))
         ssim_score = ssim((image).unsqueeze(0), (gt_image).unsqueeze(0))

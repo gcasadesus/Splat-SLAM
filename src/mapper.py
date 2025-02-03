@@ -27,7 +27,7 @@ from munch import munchify
 
 from src.utils.datasets import get_dataset, load_mono_depth
 from src.utils.common import as_intrinsics_matrix, setup_seed
-
+from src.utils.eval_utils import save_gaussians
 from src.utils.Printer import Printer, FontColor
 
 from thirdparty.glorie_slam.depth_video import DepthVideo
@@ -617,6 +617,8 @@ class Mapper(object):
                 idx=str(cur_idx),
                 diff_rgb=np.abs(gt - pred),
             )
+
+            self.gaussians.save_ply(self.save_dir + f"/point_cloud/{cur_idx}.ply")
 
         return gaussian_split
 
